@@ -6,13 +6,13 @@ import matplotlib.gridspec as gridspec
 import data_reader as reader
 import networks as net
 
-
 def sample_Z(batch_size, dimension):
-    return np.random.uniform(-1., 1., size=[batch_size, dimension])
+    # return np.random.uniform(-1., 1., size=[batch_size, dimension])
+    return np.random.normal(loc=0.0, scale=1.0, size=[batch_size, dimension])
 
 def plot(samples):
-    fig = plt.figure(figsize=(4, 4))
-    gs = gridspec.GridSpec(4, 4)
+    fig = plt.figure(figsize=(8, 8))
+    gs = gridspec.GridSpec(8, 8)
     gs.update(wspace=0.05, hspace=0.05)
 
     for i, sample in enumerate(samples):
@@ -21,7 +21,7 @@ def plot(samples):
         ax.set_xticklabels([])
         ax.set_yticklabels([])
         ax.set_aspect('equal')
-        plt.imshow(sample.reshape(64, 64), cmap='Greys_r')
+        plt.imshow(sample.reshape(64, 64), cmap='gray')
 
     return fig
 
@@ -30,12 +30,16 @@ def main():
 
     log_dir = "log/model_without_noise.ckpt"
     # train_dir_path = "D:\\Projects\\RFR\\Dataset\\HUD_1st\\converted\\Training"
-    train_dir_path = "C:\\Users\\VTouch\\Documents\\Experiment\\TensorFlow\\DCGAN\\Train_Face"
+    train_dir_path = "C:\\Users\\VTouch\\Documents\\Experiment\\TensorFlow\\Train_Face"
+    # train_dir_path = "C:\\Users\\VTouch\\Documents\\Data\\NYU_Hand_Dataset\\dataset\\cropped_train\\syth"
+    # train_dir_path = "C:\\Users\\VTouch\\Documents\\Data\\CelebA_Dataset\\img_align_celeba"
+
+    # train_dir_path = "C:\\Users\\VTouch\\Documents\\Data\\thumbnails_features_deduped_publish\\thumbnails_features_deduped_publish"
 
     resized_width = 64
     resized_height = 64
 
-    size_of_batch = 128
+    size_of_batch = 64
     epoch = 100000
     Z_dim = 100
 
@@ -45,7 +49,7 @@ def main():
 
     image_reader = tf.WholeFileReader()
 
-    _, image_value = image_reader.read(image_name_queue)
+    key, image_value = image_reader.read(image_name_queue)
 
     image_decoded = tf.image.decode_png(image_value, channels=1)
 
@@ -57,13 +61,13 @@ def main():
     # normalize -1 to 1
     image = tf.scalar_mul(2.0 / 255.0, image) - tf.constant(1.0)
 
-    x = tf.train.shuffle_batch(tensors=[image], batch_size=size_of_batch, num_threads=4, capacity=5000, min_after_dequeue=128)
+    x = tf.train.shuffle_batch(tensors=[image], batch_size=size_of_batch, num_threads=4, capacity=30000, min_after_dequeue=64)
 
     Z = tf.placeholder(tf.float32, shape=[None, Z_dim])
 
-    g_image = net.generator(Z, is_train=True, is_reuse=False)
+    g_image = net.generator(Z, is_train=True)
 
-    d_fake, d_logit_fake = net.discriminator(g_image, is_train=True, is_reuse=False)
+    d_fake, d_logit_fake = net.discriminator(g_image, is_train=True)
     d_real, d_logit_real = net.discriminator(x, is_train=True, is_reuse=True)
 
 
@@ -75,16 +79,21 @@ def main():
     d_loss = D_loss_real + D_loss_fake
     g_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_logit_fake, labels=tf.ones_like(d_logit_fake)))
 
-    # d_optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize(d_loss)
-    # g_optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize(g_loss)
+    trainable_vars = tf.trainable_variables()
 
-    d_optimizer = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(d_loss)
-    g_optimizer = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(g_loss)
+    d_vars = [var for var in trainable_vars if "discriminator" in var.name]
+    g_vars = [var for var in trainable_vars if "generator" in var.name]
+
+    d_optimizer = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(d_loss, var_list=d_vars)
+    g_optimizer = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(g_loss, var_list=g_vars)
 
     init_op = tf.group(tf.global_variables_initializer(),
                        tf.local_variables_initializer())
 
     i = 0
+
+    # for var_tf in tf.global_variables():
+    #     print(var_tf.name)
 
     with tf.Session() as sess:
         sess.run(init_op)
@@ -94,10 +103,11 @@ def main():
 
         for iter_epoch in range(epoch):
             if iter_epoch % 100 == 0:
-                samples = sess.run(g_image, feed_dict={Z: sample_Z(16, Z_dim)})
+                samples = sess.run(g_image, feed_dict={Z: sample_Z(size_of_batch, Z_dim)})
 
                 samples += 1.0
                 samples = samples * (255.0 / 2.0)
+                samples = samples.astype(np.uint8)
 
                 # samples = samples * 255.0
 
@@ -108,10 +118,7 @@ def main():
 
 
             _, batch_d_loss = sess.run([d_optimizer, d_loss], feed_dict={Z: sample_Z(size_of_batch, Z_dim)})
-            # _, batch_d_loss = sess.run([d_optimizer, d_loss], feed_dict={Z: sample_Z(size_of_batch, Z_dim)})
             _, batch_g_loss = sess.run([g_optimizer, g_loss], feed_dict={Z: sample_Z(size_of_batch, Z_dim)})
-            _, batch_g_loss = sess.run([g_optimizer, g_loss], feed_dict={Z: sample_Z(size_of_batch, Z_dim)})
-
 
 
 
